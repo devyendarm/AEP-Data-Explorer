@@ -1,0 +1,38 @@
+# Credentials and user data (handled in APPDATA but good practice to ignore)
+credentials.enc
+%APPDATA%/AEP_DataExplorer/
+*.log
+crash_log.txt
+Instructions.txt
+
+# Build artifacts
+dist/
+dist_clean/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+
+# IDE and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# AEP Data Explorer specific temporary files
+*.tmp
+
+# Data files
+*.csv
+*.xlsx
+*.db
+*.sqlite

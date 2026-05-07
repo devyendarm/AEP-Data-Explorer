@@ -1,0 +1,10 @@
+PySide6
+requests
+pandas
+openpyxl
+cryptography
+pyjwt
+pyarrow
+pyinstaller
+duckdb
+psycopg2-binary

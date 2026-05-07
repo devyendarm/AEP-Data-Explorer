@@ -1,0 +1,15 @@
+{
+    "datafeeds": [
+        {
+            "name": "Account & FPA",
+            "template_id": "389e83fa-4147-4b84-a6bc-36473408ff93",
+            "dataset_id": "6961f8eba30b4d38b0a4f8cb",
+            "initial_poll_wait": 600,
+            "subsequent_poll_wait": 90
+        }
+    ],
+    "Account & FPA": {
+        "data_path": "C:\\Users\\mdevy\\AppData\\Local\\Temp\\aep_data_cache\\01KEPCFR02Y62C2YTHVMGDW66H",
+        "last_run": "2026-01-11 05:25:02"
+    }
+}

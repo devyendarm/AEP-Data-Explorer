@@ -1,0 +1,21 @@
+{
+    "client_id": "",
+    "client_secret": "",
+    "org_id": "",
+    "sandbox_name": "prod",
+    "query_service": {
+        "host": "",
+        "port": 80,
+        "database": "prod:all",
+        "username": "",
+        "password": "",
+        "profile_dataset": ""
+    },
+    "scopes": [
+        "openid",
+        "AdobeID",
+        "session",
+        "read_organizations",
+        "additional_info.projectedProductContext"
+    ]
+}
