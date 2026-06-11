@@ -4,7 +4,30 @@ Welcome to the AEP Data Explorer. This application provides direct, high-speed a
 
 ---
 
-## 1. Initial Setup & Authentication
+## 1. Installation
+
+You do **not** need Python, the terminal, or any development tools installed to use AEP Data Explorer. 
+
+1. Go to the **Releases page** on the GitHub repository.
+2. Download the latest version of the app depending on your preference:
+
+### Option A: Portable Version (Recommended)
+Download the file named **`AEP_DataExplorer_Optimized.zip`**.
+1. Extract the `.zip` file anywhere on your computer (e.g., your Desktop or Documents folder).
+2. Open the newly extracted folder.
+3. Double-click the **`AEP_DataExplorer.exe`** file to run the app immediately!
+   - *(Alternatively, you can double-click the `Run_App.bat` file if your organization has strict rules against directly launching new `.exe` files).*
+> **Note:** This requires NO Administrator privileges and leaves no footprint on your PC.
+
+### Option B: Windows Installer
+Download the file named **`AEP_DataExplorer_Setup_v1.4.exe`** (or the latest version number).
+1. Double-click the installer to run it. 
+2. It will automatically install the app securely to your local user profile (`%LOCALAPPDATA%`) and create a Start Menu shortcut for easy access.
+> **Note:** This also requires NO Administrator privileges! It deliberately installs directly to your user folder to completely bypass Corporate UAC / Admin restrictions.
+
+---
+
+## 2. Initial Setup & Authentication
 
 When you first launch the application, you must provide your AEP API credentials. These are securely encrypted and stored locally.
 
@@ -19,7 +42,7 @@ When you first launch the application, you must provide your AEP API credentials
 
 ---
 
-## 2. Main Workspaces
+## 3. Main Workspaces
 
 ### Datafeeds (Dataset Extraction)
 Extract entire AEP datasets locally, structured into optimized Parquet files.
@@ -77,7 +100,7 @@ Run custom, ad-hoc PostgreSQL queries directly against Adobe's infrastructure.
 
 ---
 
-## 3. Local Data Persistence
+## 4. Local Data Persistence
 
 * **In-Memory Speed**: Uses a temporary DuckDB database (`:memory:`) for lightning-fast sorts and filters.
 * **Disk Storage**: Raw data is saved transparently as compressed `.parquet` files in `%APPDATA%\AEP_DataExplorer`.
@@ -85,6 +108,6 @@ Run custom, ad-hoc PostgreSQL queries directly against Adobe's infrastructure.
 
 ---
 
-## 4. Troubleshooting
+## 5. Troubleshooting
 - **Cannot connect/Fetch failed**: Ensure your Sandbox name is correct and Client ID has `read_organizations` scopes allocated.
 - **Application Logs**: Check `%APPDATA%\AEP_DataExplorer\logs` for detailed errors.

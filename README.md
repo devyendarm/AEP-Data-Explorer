@@ -18,7 +18,28 @@ A robust, cross-platform desktop application built with PySide6 and DuckDB to in
 * **Networking & Auth**: Requests, OAuth 2.0 (Server-to-Server), PyJWT, Cryptography.
 * **Database Driver**: Psycopg2 (for Postgres/AEP Query Service dialect).
 
-## Building from Source
+## Installation (For AEP Practitioners)
+
+You do **not** need Python, the terminal, or any development tools installed to use AEP Data Explorer. 
+
+1. Go to the **[Releases page](../../releases)** on this GitHub repository.
+2. Download the latest version of the app depending on your preference:
+
+### Option A: Portable Version (Recommended)
+Download the file named **`AEP_DataExplorer_Optimized.zip`**.
+1. Extract the `.zip` file anywhere on your computer (e.g., your Desktop or Documents folder).
+2. Open the newly extracted folder.
+3. Double-click the **`AEP_DataExplorer.exe`** file to run the app immediately!
+   - *(Alternatively, you can double-click the `Run_App.bat` file if your organization has strict rules against directly launching new `.exe` files).*
+> **Note:** This requires NO Administrator privileges and leaves no footprint on your PC.
+
+### Option B: Windows Installer
+Download the file named **`AEP_DataExplorer_Setup_v1.4.exe`** (or the latest version number).
+1. Double-click the installer to run it. 
+2. It will automatically install the app securely to your local user profile (`%LOCALAPPDATA%`) and create a Start Menu shortcut for easy access.
+> **Note:** This also requires NO Administrator privileges! It deliberately installs directly to your user folder to completely bypass Corporate UAC / Admin restrictions.
+
+## For Developers: Building from Source
 
 To compile the application into a standalone executable (Windows):
 
@@ -32,7 +53,7 @@ To compile the application into a standalone executable (Windows):
    ```
    *Note: Using the optimized spec file strips out unused Anaconda/Data Science blobs to keep the executable lightweight.*
 
-## Run Locally
+## Run Source Code Locally
 
 Simply run:
 ```bash
