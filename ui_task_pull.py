@@ -520,12 +520,20 @@ class TaskPullWidget(QWidget):
                     
                     # Save to Parquet
                     import pandas as pd
+                    import json
                     df = pd.DataFrame(results)
                     
+                    # Fix PyArrow Crash: AEP returns complex nested JSON objects (XDM structs)
+                    # PyArrow cannot serialize mixed nested dicts natively without a strict schema.
+                    # Convert any column containing a dict or list to a JSON string representation.
+                    for col in df.columns:
+                        if df[col].apply(lambda x: isinstance(x, (dict, list))).any():
+                            df[col] = df[col].apply(lambda x: json.dumps(x) if isinstance(x, (dict, list)) else x)
+
                     import os
                     feed_name = config.get("name")
                     safe_name = re.sub(r'[^a-zA-Z0-9_\-]', '_', feed_name)
-                    data_dir = os.path.join("downloads", safe_name)
+                    data_dir = os.path.join(os.path.expanduser('~'), "Downloads", "AEP_DataExplorer", safe_name)
                     if not os.path.exists(data_dir):
                         os.makedirs(data_dir)
                     

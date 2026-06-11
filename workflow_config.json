@@ -1,0 +1,29 @@
+{
+  "name": "Daily Data Pipeline",
+  "steps": [
+    {
+      "id": "step1_s3_ingest",
+      "type": "Ingest S3 to AEP",
+      "s3_uri": "s3://my-enterprise-data-bucket/daily_extracts/profiles.csv",
+      "dataset_id": "YOUR_AEP_DATASET_ID"
+    },
+    {
+      "id": "step2_aggregate",
+      "type": "Run Query",
+      "template_id": "YOUR_AEP_QUERY_TEMPLATE_ID",
+      "initial_wait": 30,
+      "poll_interval": 15
+    },
+    {
+      "id": "step3_export",
+      "type": "Trigger Destination",
+      "flow_id": "YOUR_AEP_DESTINATION_FLOW_ID"
+    },
+    {
+      "id": "step4_notify",
+      "type": "External API",
+      "method": "POST",
+      "url": "YOUR_EXTERNAL_API_URL_HERE"
+    }
+  ]
+}

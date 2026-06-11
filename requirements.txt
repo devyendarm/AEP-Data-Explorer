@@ -1,4 +1,4 @@
-PySide6
+PySide6==6.7.2
 requests
 pandas
 openpyxl
@@ -8,3 +8,4 @@ pyarrow
 pyinstaller
 duckdb
 psycopg2-binary
+pillow

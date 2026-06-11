@@ -473,6 +473,7 @@ class AEPService(ApiService):
         
         response = requests.get(url, headers=headers)
         response.raise_for_status()
+        return response.json().get("status")
         
     def get_flow_details(self, flow_id):
         """
@@ -540,37 +541,47 @@ class AEPService(ApiService):
         """
         Fetches a Real-Time Customer Profile or related Experience Events.
         GET /data/core/ups/access/entities
+        
+        Per Adobe docs:
+        - Profile lookup: entityIdNS must be lowercase (e.g., 'ecid', 'email')
+        - Event lookup: relatedEntityIdNS must be UPPERCASE (e.g., 'ECID', 'Email')
         """
         self.auth.get_access_token()
         url = "https://platform.adobe.io/data/core/ups/access/entities"
         headers = self.auth.get_headers()
         
         if fetch_events:
-            # 2) Profile & Experience Events
+            # Experience Events: namespace must be UPPERCASE per Adobe API spec
+            event_ns = namespace.upper() if namespace else namespace
             params = {
                 "schema.name": "_xdm.context.experienceevent",
                 "relatedSchema.name": "_xdm.context.profile",
                 "relatedEntityId": entity_id,
-                "relatedEntityIdNS": namespace
+                "relatedEntityIdNS": event_ns
             }
         else:
-            # 1) Profile Only
+            # Profile Only: namespace must be lowercase per Adobe API spec
+            profile_ns = namespace.lower() if namespace else namespace
             params = {
                 "entityId": entity_id,
-                "entityIdNS": namespace,
+                "entityIdNS": profile_ns,
                 "schema.name": "_xdm.context.profile"
             }
         
         if merge_policy_id:
             params["mergePolicyId"] = merge_policy_id
             
-        logger.info(f"Fetching {'Events' if fetch_events else 'Profile'} for {namespace}:{entity_id}...")
+        logger.info(f"Fetching {'Events' if fetch_events else 'Profile'} for {namespace}:{entity_id} | params={params}")
         
         response = requests.get(url, headers=headers, params=params)
         
         if response.status_code == 404:
-            logger.warning(f"Profile/Events not found (404)")
+            logger.warning(f"Profile/Events not found (404). Response body: {response.text[:500]}")
             return None
+        
+        if not response.ok:
+            logger.error(f"API error {response.status_code}: {response.text[:1000]}")
+            response.raise_for_status()
             
         response.raise_for_status()
         
@@ -578,6 +589,14 @@ class AEPService(ApiService):
         
         # Unwrap the entity or return list for events
         if fetch_events:
+            # Debugging: Dump raw JSON to disk for inspection
+            import os, json
+            debug_dir = os.path.join(os.path.dirname(__file__), "scratch")
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(os.path.join(debug_dir, "raw_events_response.json"), "w") as f:
+                json.dump(data, f, indent=2)
+            logger.info("Saved raw events response to scratch/raw_events_response.json for debugging.")
+            
             # Events: Always return a list
             if "children" in data:
                  return data["children"]

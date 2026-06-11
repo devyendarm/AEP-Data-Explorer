@@ -50,7 +50,8 @@ class ProfileConfigDialog(QDialog):
         self.layout.addWidget(QLabel("Lookup Type:"))
         self.combo_type = QComboBox()
         self.combo_type.addItem("Profile Only", "profile")
-        self.combo_type.addItem("Profile + Experience Events", "events")
+        self.combo_type.addItem("Experience Events Only", "events_only")
+        self.combo_type.addItem("Profile + Experience Events", "both")
         self.layout.addWidget(self.combo_type)
         
         # --- Status / Loading ---
@@ -285,7 +286,10 @@ class ProfileDetailWidget(QWidget):
         eid = config.get("entity_id", "?")
         ltype = config.get("lookup_type", "profile")
         
-        type_label = "Profile + Events" if ltype == "events" else "Profile Only"
+        type_label = {
+            "events_only": "Experience Events Only",
+            "both": "Profile + Experience Events",
+        }.get(ltype, "Profile Only")
         self.lbl_info.setText(f"{name} ({ns}: {eid}) - {type_label}")
         self.btn_fetch.setEnabled(True)
         
@@ -338,9 +342,8 @@ class ProfileDetailWidget(QWidget):
         
         if policy == "Default": policy = None
         
-        # Robustness: Force standard lowercase for common namespaces
-        if ns and ns.upper() == "ECID":
-             ns = "ecid"
+        # Do NOT normalize namespace here — pass it as-is to the API service,
+        # which will apply the correct casing per call type (profile vs events).
         
         if not ns or not eid:
             QMessageBox.warning(self, "Invalid Config", "Namespace and Entity ID required.")
@@ -352,8 +355,7 @@ class ProfileDetailWidget(QWidget):
         self.segments_results.clear_data()
         self.events_results.clear_data()
         
-        fetch_events = (ltype == "events")
-        self.worker = ProfileWorker(eid, ns, policy, fetch_events)
+        self.worker = ProfileWorker(eid, ns, policy, ltype)
         self.worker.finished.connect(self.on_fetch_success)
         self.worker.error.connect(self.on_fetch_error)
         self.worker.start()
@@ -380,110 +382,120 @@ class ProfileDetailWidget(QWidget):
         self.ui.set_status(f"Fetch successful at {now}")
         self.display_data(data)
 
+    def populate_events_tab(self, data):
+        events_list = []
+        if isinstance(data, list):
+            events_list = data
+        elif isinstance(data, dict) and "children" in data:
+            events_list = data["children"]
+        elif isinstance(data, dict):
+            events_list = [data]
+            
+        self.events_results.clear_data()
+        
+        if events_list:
+            try:
+                try:
+                    import pandas as pd
+                    df = pd.json_normalize(events_list)
+                    if df.shape[1] == 0 and len(events_list) > 0 and 'entity' in events_list[0]:
+                        df = pd.json_normalize([e.get('entity', {}) for e in events_list])
+                except Exception as norm_error:
+                    from logger import logger
+                    logger.error(f"json_normalize failed: {norm_error}, using DataFrame constructor")
+                    df = pd.DataFrame(events_list)
+                
+                if df.empty or df.shape[1] == 0:
+                    self.events_results.set_status("Event data loaded but has no displayable columns")
+                    return
+                
+                self.events_results.load_data(df)
+                self.events_results.show()
+                self.events_results.update()
+                
+                self.tabs.setTabText(2, f"Events ({len(events_list)})")
+                self.ui.set_status(f"Loaded {len(events_list)} events")
+            except Exception as e:
+                from logger import logger
+                logger.error(f"Error loading events: {e}", exc_info=True)
+                self.events_results.set_status(f"Error: {e}")
+        else:
+            self.events_results.set_status("No events found")
+            self.tabs.setTabText(2, "Events (0)")
+
+    def populate_profile_tab(self, data):
+        entity = data
+        if isinstance(data, dict) and "entity" in data:
+            entity = data["entity"]
+        elif isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, dict) and "entity" in v:
+                    entity = v["entity"]
+                    break
+                    
+        self.profile_results.clear_data()
+        self.segments_results.clear_data()
+                    
+        if not entity:
+            self.profile_results.set_status("No entity data found")
+            return
+
+        segments_data = entity.get("segmentMembership", {}) if isinstance(entity, dict) else {}
+        
+        flat_data = self.flatten_json(entity)
+        if not flat_data and isinstance(entity, dict):
+            import json
+            flat_data = {"Raw JSON": json.dumps(entity, indent=2)}
+            
+        flat_data = {k: v for k, v in flat_data.items() if not k.startswith("segmentMembership")}
+        
+        import pandas as pd
+        df_profile = pd.DataFrame(list(flat_data.items()), columns=["Field", "Value"])
+        self.profile_results.load_data(df_profile)
+        self.tabs.setTabText(0, f"Profile Info ({len(df_profile)})")
+        
+        segments_list = []
+        for ns, segs in segments_data.items():
+            for seg_id, details in segs.items():
+                segments_list.append({
+                    "Segment ID": seg_id,
+                    "Status": details.get("status", "unknown"),
+                    "Last Qualified": details.get("lastQualificationTime", ""),
+                    "Namespace": ns
+                })
+        
+        if segments_list:
+            df_segments = pd.DataFrame(segments_list)
+            self.segments_results.load_data(df_segments)
+            self.tabs.setTabText(1, f"Segments ({len(segments_list)})")
+        else:
+            self.segments_results.set_status("No segment memberships")
+            self.tabs.setTabText(1, "Segments (0)")
+        
+        self.ui.set_status(f"Loaded profile with {len(df_profile)} attributes and {len(segments_list)} segments")
+
     def display_data(self, data):
-        """Parses and displays the data packet."""
+        """Parses and displays the data packet based on lookup type."""
         ltype = self.current_config.get("lookup_type", "profile")
         
-        if ltype == "events":
-            # Events mode - populate Events tab
-            events_list = []
-            if isinstance(data, list):
-                events_list = data
-            elif isinstance(data, dict) and "children" in data:
-                events_list = data["children"]
-            elif isinstance(data, dict):
-                events_list = [data]
-            
-            if events_list:
-                try:
-                    # Try to normalize - if it fails, use the raw data
-                    try:
-                        import pandas as pd
-                        df = pd.json_normalize(events_list)
-                        
-                        # If no columns, try normalizing the 'entity' field
-                        if df.shape[1] == 0 and len(events_list) > 0 and 'entity' in events_list[0]:
-                            df = pd.json_normalize([e.get('entity', {}) for e in events_list])
-                    except Exception as norm_error:
-                        logger.error(f"json_normalize failed: {norm_error}, using DataFrame constructor")
-                        df = pd.DataFrame(events_list)
-                    
-                    if df.empty or df.shape[1] == 0:
-                        self.events_results.set_status("Event data loaded but has no displayable columns")
-                        logger.warning("DataFrame is empty or has no columns")
-                        return
-                    
-                    self.events_results.load_data(df)
-                    
-                    # Force widget visibility and refresh
-                    self.events_results.show()
-                    self.events_results.update()
-                    
-                    self.tabs.setTabText(2, f"Events ({len(events_list)})")
-                    self.tabs.setCurrentIndex(2)  # Auto-switch to Events tab
-                    self.ui.set_status(f"Loaded {len(events_list)} events")
-                except Exception as e:
-                    logger.error(f"Error loading events: {e}", exc_info=True)
-                    self.events_results.set_status(f"Error: {e}")
-            else:
-                self.events_results.set_status("No events found")
-                self.tabs.setTabText(2, "Events (0)")
+        if ltype == "both":
+            self.populate_profile_tab(data.get("profile", {}))
+            self.populate_events_tab(data.get("events", []))
+            self.tabs.setCurrentIndex(0)
+        elif ltype == "events_only":
+            self.populate_events_tab(data.get("events", []))
+            self.tabs.setCurrentIndex(2)
         else:
-            # Profile mode - populate Profile Info and Segments tabs
-            entity = data
-            if isinstance(data, dict) and "entity" in data:
-                entity = data["entity"]
-            elif isinstance(data, dict):
-                for k, v in data.items():
-                    if isinstance(v, dict) and "entity" in v:
-                        entity = v["entity"]
-                        break
-                        
-            if not entity:
-                QMessageBox.warning(self, "Data Warning", "No entity data found")
-                return
-
-            # Extract segmentMembership for Segments tab
-            segments_data = entity.get("segmentMembership", {})
-            
-            # Flatten profile data (excluding segmentMembership)
-            flat_data = self.flatten_json(entity)
-            flat_data = {k: v for k, v in flat_data.items() if not k.startswith("segmentMembership")}
-            
-            # Populate Profile Info tab
-            import pandas as pd
-            df_profile = pd.DataFrame(list(flat_data.items()), columns=["Field", "Value"])
-            self.profile_results.load_data(df_profile)
-            self.tabs.setTabText(0, f"Profile Info ({len(df_profile)})")
-            
-            # Populate Segments tab
-            segments_list = []
-            for ns, segs in segments_data.items():
-                for seg_id, details in segs.items():
-                    segments_list.append({
-                        "Segment ID": seg_id,
-                        "Status": details.get("status", "unknown"),
-                        "Last Qualified": details.get("lastQualificationTime", ""),
-                        "Namespace": ns
-                    })
-            
-            if segments_list:
-                df_segments = pd.DataFrame(segments_list)
-                self.segments_results.load_data(df_segments)
-                self.tabs.setTabText(1, f"Segments ({len(segments_list)})")
-            else:
-                self.segments_results.set_status("No segment memberships")
-                self.tabs.setTabText(1, "Segments (0)")
-            
-            self.ui.set_status(f"Loaded profile with {len(df_profile)} attributes and {len(segments_list)} segments")
+            self.populate_profile_tab(data.get("profile", {}))
+            self.tabs.setCurrentIndex(0)
 
     def flatten_json(self, y):
         out = {}
         def flatten(x, name=''):
-            if type(x) is dict:
+            if isinstance(x, dict):
                 for a in x:
                     flatten(x[a], name + a + '.')
-            elif type(x) is list:
+            elif isinstance(x, list):
                 for i, a in enumerate(x):
                     flatten(a, name + f'[{i}].')
             else:
@@ -494,7 +506,7 @@ class ProfileDetailWidget(QWidget):
     def update_persistence_timestamp(self, config):
         tasks = persistence.load_profile_tasks()
         for i, t in enumerate(tasks):
-             if t["name"] == config["name"]:
+             if t.get("name") == config.get("name"):
                  tasks[i] = config
                  persistence.save_profile_tasks(tasks)
                  break
@@ -535,18 +547,27 @@ class ProfileWorker(QThread):
     finished = Signal(object)  # Changed from dict to object to handle both dict and list
     error = Signal(str)
     
-    def __init__(self, eid, ns, policy, fetch_events=False):
+    def __init__(self, eid, ns, policy, ltype="profile"):
         super().__init__()
         self.eid = eid
         self.ns = ns
         self.policy = policy
-        self.fetch_events = fetch_events
+        self.ltype = ltype
         self.service = AEPService()
         
     def run(self):
         try:
-            data = self.service.get_profile(self.eid, self.ns, self.policy, self.fetch_events)
-            self.finished.emit(data if data is not None else {})
+            if self.ltype == "both":
+                prof = self.service.get_profile(self.eid, self.ns, self.policy, fetch_events=False)
+                evts = self.service.get_profile(self.eid, self.ns, self.policy, fetch_events=True)
+                data = {"profile": prof, "events": evts}
+            elif self.ltype == "events_only":
+                evts = self.service.get_profile(self.eid, self.ns, self.policy, fetch_events=True)
+                data = {"events": evts}
+            else:
+                prof = self.service.get_profile(self.eid, self.ns, self.policy, fetch_events=False)
+                data = {"profile": prof}
+            self.finished.emit(data)
         except Exception as e:
             self.error.emit(str(e))
 

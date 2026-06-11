@@ -135,6 +135,8 @@ class TaskValidateWidget(QWidget):
         # Selected Tables Display
         self.lbl_active_tables = QLabel("Active Tables: None")
         self.lbl_active_tables.setStyleSheet("color: #aaa; font-size: 11px; margin-left: 10px;")
+        self.lbl_active_tables.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl_active_tables.setWordWrap(True)
         
         config_layout.addWidget(QLabel("Local File (Optional):"))
         config_layout.addWidget(btn_file)
@@ -328,10 +330,12 @@ class TaskValidateWidget(QWidget):
         if self.local_file_path:
             parts.append("local_table")
             
+        feed_idx = 1
         for name in self.selected_feeds:
-            alias = self.sanitize_table_name(name)
+            alias = f"feed{feed_idx}"
             self.feed_alias_map[name] = alias
             parts.append(f"{alias} ('{name}')")
+            feed_idx += 1
             
         if not parts:
             self.lbl_active_tables.setText("Active Tables: None")
@@ -416,6 +420,7 @@ from PySide6.QtCore import QThread, Signal
 class ValidationWorker(QThread):
     finished = Signal(object) # Emits DataFrame
     error = Signal(str)
+    progress = Signal(int, str)
 
     def __init__(self, local_path, feed_configs, query):
         super().__init__()
@@ -433,15 +438,16 @@ class ValidationWorker(QThread):
             # 2. Register Local File (Optional)
             if self.local_path:
                 if self.local_path.endswith('.csv'):
-                    con.execute(f"CREATE OR REPLACE VIEW local_table AS SELECT * FROM read_csv_auto('{self.local_path}')")
+                    con.execute(f"CREATE OR REPLACE VIEW local_table_raw AS SELECT * FROM read_csv_auto('{self.local_path}')")
                 elif self.local_path.endswith('.parquet'):
-                    con.execute(f"CREATE OR REPLACE VIEW local_table AS SELECT * FROM read_parquet('{self.local_path}')")
+                    con.execute(f"CREATE OR REPLACE VIEW local_table_raw AS SELECT * FROM read_parquet('{self.local_path}')")
                 elif self.local_path.endswith('.xlsx'):
                     import pandas as pd
                     df = pd.read_excel(self.local_path)
-                    con.register('local_table', df)
-                elif self.local_path.endswith('.csv'):
-                    df = pd.read_csv(self.local_path)
+                    con.register('local_table_raw', df)
+                else:
+                    raise ValueError(f"Unsupported local file format: {self.local_path}. Must be .csv, .parquet, or .xlsx")
+            
             # 3. Register Feed Data
             for feed in self.feed_configs:
                 path = feed["path"]
@@ -451,14 +457,12 @@ class ValidationWorker(QThread):
                     # Directory of parquet files
                     parquet_glob = os.path.join(path, "*.parquet")
                     parquet_glob = parquet_glob.replace("\\", "/") # DuckDB needs forward slashes
-                    con.execute(f"CREATE OR REPLACE VIEW {alias} AS SELECT * FROM read_parquet('{parquet_glob}')")
+                    con.execute(f"CREATE OR REPLACE VIEW {alias}_raw AS SELECT * FROM read_parquet('{parquet_glob}')")
                 else:
                     # Single DB Attach (Legacy/Alternative)
-                    # Note: Attaching multiple DBs needs distinct attach names
-                    # Simplifying: if it's a DuckDB file, attach and create view
                     attach_name = f"db_{alias}"
                     con.execute(f"ATTACH '{path}' AS {attach_name}")
-                    con.execute(f"CREATE OR REPLACE VIEW {alias} AS SELECT * FROM {attach_name}.data")
+                    con.execute(f"CREATE OR REPLACE VIEW {alias}_raw AS SELECT * FROM {attach_name}.data")
 
             # 4. Auto-Flattening
             # For each view (local_table, aliases), check if it has structs and flatten it
@@ -466,22 +470,21 @@ class ValidationWorker(QThread):
             if self.local_path: views_to_flatten.append("local_table")
             for feed in self.feed_configs: views_to_flatten.append(feed["alias"])
             
-            for view_name in views_to_flatten:
-                # Generate a flat view
-                flat_name = f"{view_name}_flat"
+            for clean_alias in views_to_flatten:
+                raw_name = f"{clean_alias}_raw"
                 try:
-                    # Check if view exists
-                    con.execute(f"SELECT 1 FROM {view_name} LIMIT 0")
+                    # Check if raw view exists
+                    con.execute(f"SELECT 1 FROM {raw_name} LIMIT 0")
                     
-                    # Generate flat view
-                    generate_flattened_query(con, view_name, flat_name)
+                    # Generate flat view using the clean alias
+                    generate_flattened_query(con, raw_name, clean_alias)
                     
-                    # Replace original view with flat view for seamless querying
-                    con.execute(f"DROP VIEW {view_name}")
-                    con.execute(f"CREATE VIEW {view_name} AS SELECT * FROM {flat_name}")
+                    # Now `SELECT * FROM feed1` gives flat data
+                    # and `SELECT * FROM feed1_raw` gives nested data.
                 except Exception as e:
-                    # If it fails (e.g. view doesn't exist or empty), skip
-                    print(f"Skipping flattening for {view_name}: {e}")
+                    # If it fails, fallback to just mapping the clean alias to the raw view
+                    print(f"Skipping flattening for {clean_alias}: {e}")
+                    con.execute(f"CREATE OR REPLACE VIEW {clean_alias} AS SELECT * FROM {raw_name}")
 
             
             # 5. Run User Query

@@ -427,6 +427,15 @@ class TaskIngestWidget(QWidget):
         self.progress.setFormat("Error")
         self.log(f"Error: {err}")
         QMessageBox.critical(self, "Ingestion Failed", str(err))
+        # Clean up temporary file if it was created
+        if self._temp_upload_path:
+            try:
+                os.remove(self._temp_upload_path)
+                self.log(f"Removed temporary file: {self._temp_upload_path}")
+            except Exception as e:
+                self.log(f"Failed to remove temporary file: {e}")
+            finally:
+                self._temp_upload_path = None
 
 class IngestionWorker(QThread):
     progress = Signal(int, str)

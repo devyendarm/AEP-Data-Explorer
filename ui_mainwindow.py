@@ -21,6 +21,8 @@ from ui_task_segments import TaskSegmentsWidget
 from ui_create_segment_feed import CreateSegmentFeedDialog
 from ui_task_workflow import TaskWorkflowWidget
 from ui_settings import SettingsWidget
+from ui_help import HelpDialog
+from PySide6.QtGui import QAction, QKeySequence
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -29,11 +31,13 @@ class MainWindow(QMainWindow):
         
         # Icon Loading Helper
         def resource_path(relative_path):
-             try: base_path = sys._MEIPASS
-             except Exception: base_path = os.path.abspath(".")
+             if getattr(sys, 'frozen', False):
+                 base_path = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+             else:
+                 base_path = os.path.dirname(os.path.abspath(__file__))
              return os.path.join(base_path, relative_path)
 
-        self.setWindowIcon(QIcon(resource_path("app_icon.png")))
+        self.setWindowIcon(QIcon(resource_path("app_icon.ico")))
         self.resize(1200, 800)
         
         # Initialize Auth
@@ -42,6 +46,9 @@ class MainWindow(QMainWindow):
         # Central Widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
+        
+        # Setup Menu Bar
+        self.setup_menu()
         
         # Main Layout (Horizontal: Sidebar | Content)
         from PySide6.QtWidgets import QSplitter
@@ -662,6 +669,38 @@ class MainWindow(QMainWindow):
             item.setData(0, Qt.UserRole, task)
 
              
+    def setup_menu(self):
+        menubar = self.menuBar()
+        menubar.setStyleSheet("background-color: #333; color: white;")
+        
+        help_menu = menubar.addMenu("Help")
+        
+        action_help = QAction("Context Help", self)
+        action_help.setShortcut(QKeySequence("F1"))
+        action_help.triggered.connect(self.show_context_help)
+        
+        help_menu.addAction(action_help)
+
+    def show_context_help(self):
+        context_id = "default"
+        current_w = self.content_stack.currentWidget()
+        
+        if hasattr(self, "task_validate") and current_w == self.task_validate:
+            context_id = "validate"
+        elif hasattr(self, "task_pull") and current_w == self.task_pull:
+            context_id = "pull"
+        elif hasattr(self, "task_profile") and current_w == self.task_profile:
+            context_id = "profile"
+        elif hasattr(self, "task_ingest") and current_w == self.task_ingest:
+            context_id = "ingest"
+        elif hasattr(self, "task_segments") and current_w == self.task_segments:
+            context_id = "segments"
+        elif hasattr(self, "task_workflows") and current_w == self.task_workflows:
+            context_id = "workflow"
+            
+        dialog = HelpDialog(context_id=context_id, parent=self)
+        dialog.exec()
+
     def on_sidebar_clicked(self, item, column):
         """Handles feed selection in the tree."""
         if item is None: return
@@ -720,6 +759,18 @@ class MainWindow(QMainWindow):
             else:
                 self.task_pull.load_feed(None)
                 self.lbl_page_title.setText("Error Loading Feed")
+            return
+            
+        # 3b. Individual Ingestion Items (Children of item_ingest)
+        if item.parent() == self.item_ingest:
+            config = item.data(0, Qt.UserRole)
+            if config:
+                self.task_ingest.load_config(config)
+                self.content_stack.setCurrentWidget(self.task_ingest)
+                self.lbl_page_title.setText(config["name"])
+            else:
+                self.task_ingest.load_config(None)
+                self.lbl_page_title.setText("Error Loading Ingestion Task")
             return
             
         # 4. Local Queries Items
@@ -824,7 +875,8 @@ class MainWindow(QMainWindow):
         
     def delete_workflow(self, item):
         config = item.data(0, Qt.UserRole)
-        name = config["name"]
+        name = config.get("name") if config else None
+        if not name: return
         
         reply = QMessageBox.question(self, "Confirm Delete", 
                                      f"Are you sure you want to delete workflow '{name}'?",
@@ -1031,9 +1083,9 @@ class MainWindow(QMainWindow):
                                    QMessageBox.Yes | QMessageBox.No)
         
         if reply == QMessageBox.Yes:
-            tasks = persistence.load_segment_tasks()
+            tasks = persistence.load_segment_feeds()
             tasks = [t for t in tasks if t.get("name") != name]
-            persistence.save_segment_tasks(tasks)
+            persistence.save_segment_feeds(tasks)
             
             self.load_segment_list()
             self.task_segments.load_config(None)
